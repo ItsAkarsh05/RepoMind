@@ -29,7 +29,7 @@ __pycache__/
 Thumbs.db
 
 # Virtual environment
-venv/
+.venv/
 env/
 
 # RepoMind — cloned repos and vector indices

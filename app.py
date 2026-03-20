@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 # LLM & Embedding setup
 # ---------------------------------------------------------------------------
 
-llm = Ollama(model="llama3", request_timeout=60.0)
+llm = Ollama(model="qwen2.5-coder:3b", request_timeout=60.0)
 
 lc_embedding_model = load_embedding_model()
 embed_model = LangchainEmbedding(lc_embedding_model)

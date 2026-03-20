@@ -6,19 +6,11 @@ os.environ["TORCH_HOME"] = "/teamspace/studios/this_studio/weights"
 
 from typing import List, Optional, Union
 
-from langchain.callbacks import FileCallbackHandler
-from langchain.retrievers import ContextualCompressionRetriever, ParentDocumentRetriever
-from langchain.retrievers.document_compressors import EmbeddingsFilter
-from langchain.storage import InMemoryStore
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.document_loaders import UnstructuredFileLoader
+from langchain_core.callbacks import FileCallbackHandler
 from langchain_community.embeddings import HuggingFaceBgeEmbeddings
-from langchain_community.vectorstores import FAISS, Chroma
 from langchain_core.documents import Document
 from loguru import logger
 from rich import print
-from sentence_transformers import CrossEncoder
-from unstructured.cleaners.core import clean_extra_whitespace, group_broken_paragraphs
 
 logfile = "log/output.log"
 logger.add(logfile, colorize=True, enqueue=True)
@@ -35,7 +27,7 @@ class RAGException(Exception):
 
 
 def load_embedding_model(
-    model_name: str = "BAAI/bge-large-en-v1.5", device: str = "cuda"
+    model_name: str = "BAAI/bge-large-en-v1.5", device: str = None
 ) -> HuggingFaceBgeEmbeddings:
     """
     Loads and returns a HuggingFaceBgeEmbeddings model for embedding text. This embedding model is used to encode the documents and queries for retrieval.
@@ -47,6 +39,10 @@ def load_embedding_model(
     Returns:
         HuggingFaceBgeEmbeddings: The loaded HuggingFaceBgeEmbeddings model.
     """
+    if device is None:
+        import torch
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        
     model_kwargs = {"device": device}
     encode_kwargs = {
         "normalize_embeddings": True
@@ -60,8 +56,8 @@ def load_embedding_model(
 
 
 def load_reranker_model(
-    reranker_model_name: str = "BAAI/bge-reranker-large", device: str = "cuda"
-) -> CrossEncoder:
+    reranker_model_name: str = "BAAI/bge-reranker-large", device: str = None
+) -> object:
     """
     Loads a reranker model from the specified model name and device. We will use CrossEncoder model as defined in https://arxiv.org/abs/2005.11401 for reranking the retrieved documents.
 
@@ -73,6 +69,12 @@ def load_reranker_model(
         CrossEncoder: The loaded reranker model.
 
     """
+    from sentence_transformers import CrossEncoder
+
+    if device is None:
+        import torch
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+
     reranker_model = CrossEncoder(
         model_name=reranker_model_name, max_length=512, device=device
     )
@@ -91,6 +93,9 @@ def load_pdf(
     Returns:
         List[Document]: A list of Document objects representing the loaded PDF files.
     """
+
+    from langchain_community.document_loaders import UnstructuredFileLoader
+    from unstructured.cleaners.core import clean_extra_whitespace, group_broken_paragraphs
 
     # If a single file is provided, load it and return the Document object
     if isinstance(files, str):
@@ -156,6 +161,18 @@ def create_parent_retriever(
         ParentDocumentRetriever: The created parent document retriever.
 
     """
+
+    try:
+        from langchain.text_splitter import RecursiveCharacterTextSplitter
+        from langchain.storage import InMemoryStore
+        from langchain.retrievers import ParentDocumentRetriever
+        from langchain_community.vectorstores import Chroma
+    except ImportError:
+        # Fallbacks for newer langchain versions
+        from langchain_text_splitters import RecursiveCharacterTextSplitter
+        from langchain_core.stores import InMemoryStore
+        from langchain.retrievers import ParentDocumentRetriever
+        from langchain_community.vectorstores import Chroma
 
     # This text splitter is used to create the parent documents. Parent documents are typically longer and provide broader context.
     parent_splitter = RecursiveCharacterTextSplitter(

@@ -1,0 +1,14 @@
+streamlit>=1.32.0
+flask>=3.0.0
+llama-index>=0.10.0
+llama-index-llms-ollama>=0.1.0
+llama-index-embeddings-langchain>=0.1.0
+langchain>=0.1.0
+langchain-community>=0.0.10
+faiss-cpu>=1.7.4
+nest-asyncio>=1.6.0
+pytest>=8.0.0
+loguru>=0.7.0
+rich>=13.0.0
+sentence-transformers>=2.2.0
+unstructured>=0.10.0

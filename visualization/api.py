@@ -186,6 +186,20 @@ def create_app() -> Flask:
     app = Flask(__name__)
     app.register_blueprint(viz_bp)
     app.register_blueprint(chat_bp)
+
+    @app.route("/", methods=["GET"])
+    def index():
+        return jsonify({
+            "message": "Welcome to the RepoMind API!",
+            "endpoints": [
+                "GET  /repo/structure?repo_path=<path>",
+                "GET  /repo/call-graph?repo_path=<path>",
+                "GET  /repo/dependencies?repo_path=<path>",
+                "GET  /chat/history",
+                "POST /chat/reset",
+            ]
+        }), 200
+
     return app
 
 
