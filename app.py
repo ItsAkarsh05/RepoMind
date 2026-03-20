@@ -12,6 +12,13 @@ import logging
 import streamlit as st
 import nest_asyncio
 
+st.set_page_config(
+    page_title="RepoMind — Chat with Code",
+    page_icon="🧠",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
 from llama_index.core import Settings, PromptTemplate, VectorStoreIndex
 from llama_index.llms.ollama import Ollama
 from llama_index.embeddings.langchain import LangchainEmbedding
@@ -19,6 +26,10 @@ from llama_index.embeddings.langchain import LangchainEmbedding
 from rag_101.retriever import load_embedding_model, generate_repo_ast
 from repo_ingestion import ingest_github_repo, validate_github_url
 from memory import ChatMemory
+from visualization import (
+    get_repo_structure, build_call_graph, build_dependency_graph,
+    render_repo_tree, render_call_graph, render_dependency_graph,
+)
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -64,6 +75,10 @@ if "repo_ast" not in st.session_state:
     st.session_state.repo_ast = {}
 if "chat_memory" not in st.session_state:
     st.session_state.chat_memory = ChatMemory(max_messages=MAX_HISTORY_MESSAGES)
+if "repo_path" not in st.session_state:
+    st.session_state.repo_path = None
+if "viz_cache" not in st.session_state:
+    st.session_state.viz_cache = {}
 
 
 # ---------------------------------------------------------------------------
@@ -75,6 +90,8 @@ def reset_chat():
     st.session_state.messages = []
     st.session_state.query_engine = None
     st.session_state.repo_ast = {}
+    st.session_state.repo_path = None
+    st.session_state.viz_cache = {}
     st.session_state.chat_memory.clear_history()
     gc.collect()
 
@@ -236,6 +253,8 @@ with st.sidebar:
 
                 st.session_state.query_engine = query_engine
                 st.session_state.repo_ast = generate_repo_ast(repo_path)
+                st.session_state.repo_path = repo_path
+                st.session_state.viz_cache = {}  # reset viz cache for new repo
 
             except Exception as e:
                 st.error(f"An error occurred: {e}")
@@ -246,77 +265,151 @@ with st.sidebar:
 
 
 # ---------------------------------------------------------------------------
-# Main chat area
+# Custom CSS for premium look
 # ---------------------------------------------------------------------------
 
-col1, col2 = st.columns([6, 1])
+st.markdown("""
+<style>
+    /* Tab styling */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+        padding: 0 4px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        padding: 12px 24px;
+        border-radius: 10px 10px 0 0;
+        font-weight: 600;
+        font-size: 1.05rem;
+    }
+    .stTabs [aria-selected="true"] {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white !important;
+    }
+    /* Graphviz container */
+    .stGraphVizChart {
+        border-radius: 12px;
+        padding: 8px;
+    }
+</style>
+""", unsafe_allow_html=True)
 
-with col1:
-    st.header("Chat With Your Code! Powered by LLama3 🦙🚀")
 
-with col2:
-    st.button("Clear ↺", on_click=reset_chat)
+# ---------------------------------------------------------------------------
+# Main content — two top-level tabs
+# ---------------------------------------------------------------------------
 
-# Display chat history
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+tab_chat, tab_viz = st.tabs(["💬 Chat", "📊 Visualize"])
 
-# Accept user input
-if prompt := st.chat_input("What's up?"):
-    # Record the user message in both Streamlit state and ChatMemory
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    st.session_state.chat_memory.add_user_message(prompt)
+# ═══════════════════════════════════════════════════════════════════════
+# TAB 1: Chat
+# ═══════════════════════════════════════════════════════════════════════
 
-    with st.chat_message("user"):
-        st.markdown(prompt)
+with tab_chat:
+    col1, col2 = st.columns([6, 1])
 
-    with st.chat_message("assistant"):
-        message_placeholder = st.empty()
-        full_response = ""
+    with col1:
+        st.header("Chat With Your Code! Powered by LLama3 🦙🚀")
 
-        query_engine = st.session_state.query_engine
+    with col2:
+        st.button("Clear ↺", on_click=reset_chat)
 
-        if query_engine is None:
-            full_response = "⚠️ Please load a GitHub repository first."
-        else:
-            # ----------------------------------------------------------
-            # Enriched query construction (follow-up support)
-            # ----------------------------------------------------------
-            # We inject three pieces of context into the query string:
-            #
-            # 1. **Conversation history** — so the LLM can resolve
-            #    references like "it", "this function", "optimize it".
-            #    This is the key mechanism for follow-up support.
-            #
-            # 2. **Repository AST** — structural overview of the repo
-            #    for file/class/function awareness.
-            #
-            # 3. **The user's current question** — the actual prompt.
-            #
-            # Together with the RAG-retrieved code chunks (injected by
-            # llama_index via {context_str}), this gives the LLM the
-            # full picture: what was discussed, what the code looks
-            # like, and what the user is currently asking.
-            # ----------------------------------------------------------
-            history_ctx = _build_history_context()
-            enriched_query = (
-                f"{history_ctx}"
-                f"Given the repository AST:\n"
-                f"{json.dumps(st.session_state.repo_ast, indent=2)}\n\n"
-                f"And the following question: {prompt}"
-            )
+    # Display chat history
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
 
-            streaming_response = query_engine.query(enriched_query)
+    # Accept user input
+    if prompt := st.chat_input("What's up?"):
+        # Record the user message in both Streamlit state and ChatMemory
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        st.session_state.chat_memory.add_user_message(prompt)
 
-            for chunk in streaming_response.response_gen:
-                full_response += chunk
-                message_placeholder.markdown(full_response + "▌")
+        with st.chat_message("user"):
+            st.markdown(prompt)
 
-        message_placeholder.markdown(full_response)
+        with st.chat_message("assistant"):
+            message_placeholder = st.empty()
+            full_response = ""
 
-    # Record the assistant response in both Streamlit state and ChatMemory
-    st.session_state.messages.append(
-        {"role": "assistant", "content": full_response}
-    )
-    st.session_state.chat_memory.add_assistant_message(full_response)
+            query_engine = st.session_state.query_engine
+
+            if query_engine is None:
+                full_response = "⚠️ Please load a GitHub repository first."
+            else:
+                history_ctx = _build_history_context()
+                enriched_query = (
+                    f"{history_ctx}"
+                    f"Given the repository AST:\n"
+                    f"{json.dumps(st.session_state.repo_ast, indent=2)}\n\n"
+                    f"And the following question: {prompt}"
+                )
+
+                streaming_response = query_engine.query(enriched_query)
+
+                for chunk in streaming_response.response_gen:
+                    full_response += chunk
+                    message_placeholder.markdown(full_response + "▌")
+
+            message_placeholder.markdown(full_response)
+
+        # Record the assistant response in both Streamlit state and ChatMemory
+        st.session_state.messages.append(
+            {"role": "assistant", "content": full_response}
+        )
+        st.session_state.chat_memory.add_assistant_message(full_response)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# TAB 2: Visualize
+# ═══════════════════════════════════════════════════════════════════════
+
+with tab_viz:
+    if not st.session_state.repo_path:
+        st.markdown(
+            '<div style="text-align:center;padding:80px 20px;">'
+            '<p style="font-size:3rem;">📊</p>'
+            '<h2 style="color:#9E9E9E;">No Repository Loaded</h2>'
+            '<p style="color:#BDBDBD;font-size:1.1rem;">'
+            'Enter a GitHub URL in the sidebar and click '
+            '<b>Load Repository</b> to unlock visualizations.</p></div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        repo_name = os.path.basename(st.session_state.repo_path)
+        st.markdown(
+            f'<h2 style="margin-bottom:4px;">'
+            f'🔍 Exploring <code>{repo_name}</code></h2>',
+            unsafe_allow_html=True,
+        )
+
+        viz_struct, viz_calls, viz_deps = st.tabs([
+            "📂 File Structure",
+            "🔗 Call Graph",
+            "🌐 Dependencies",
+        ])
+
+        repo_path_viz = st.session_state.repo_path
+
+        with viz_struct:
+            if "repo_tree" not in st.session_state.viz_cache:
+                with st.spinner("Building file tree…"):
+                    st.session_state.viz_cache["repo_tree"] = (
+                        get_repo_structure(repo_path_viz)
+                    )
+            render_repo_tree(st.session_state.viz_cache["repo_tree"])
+
+        with viz_calls:
+            if "call_graph" not in st.session_state.viz_cache:
+                with st.spinner("Analysing function calls…"):
+                    st.session_state.viz_cache["call_graph"] = (
+                        build_call_graph(repo_path_viz)
+                    )
+            render_call_graph(st.session_state.viz_cache["call_graph"])
+
+        with viz_deps:
+            if "dep_graph" not in st.session_state.viz_cache:
+                with st.spinner("Mapping dependencies…"):
+                    st.session_state.viz_cache["dep_graph"] = (
+                        build_dependency_graph(repo_path_viz)
+                    )
+            render_dependency_graph(st.session_state.viz_cache["dep_graph"])

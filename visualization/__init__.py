@@ -15,9 +15,13 @@ All outputs are JSON-serialisable dicts ready for frontend graph libraries
 from .repo_structure import get_repo_structure
 from .call_graph import build_call_graph
 from .dependency_graph import build_dependency_graph
+from .streamlit_viz import render_repo_tree, render_call_graph, render_dependency_graph
 
 __all__ = [
     "get_repo_structure",
     "build_call_graph",
     "build_dependency_graph",
+    "render_repo_tree",
+    "render_call_graph",
+    "render_dependency_graph",
 ]
