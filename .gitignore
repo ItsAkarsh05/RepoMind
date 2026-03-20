@@ -31,3 +31,7 @@ Thumbs.db
 # Virtual environment
 venv/
 env/
+
+# RepoMind — cloned repos and vector indices
+cloned_repos/
+faiss_indices/
