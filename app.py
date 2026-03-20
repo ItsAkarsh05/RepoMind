@@ -18,6 +18,7 @@ from llama_index.embeddings.langchain import LangchainEmbedding
 
 from rag_101.retriever import load_embedding_model, generate_repo_ast
 from repo_ingestion import ingest_github_repo, validate_github_url
+from memory import ChatMemory
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -31,6 +32,10 @@ os.environ.setdefault("TORCH_HOME", WEIGHTS_DIR)
 # Directories for cloned repos and FAISS indices
 CLONE_DIR = os.path.join(os.getcwd(), "cloned_repos")
 FAISS_DIR = os.path.join(os.getcwd(), "faiss_indices")
+
+# Maximum number of recent chat messages to include in LLM context.
+# Keeps token usage bounded while providing conversational continuity.
+MAX_HISTORY_MESSAGES = 10
 
 # Logging
 logging.basicConfig(level=logging.INFO)
@@ -57,6 +62,8 @@ if "query_engine" not in st.session_state:
     st.session_state.query_engine = None
 if "repo_ast" not in st.session_state:
     st.session_state.repo_ast = {}
+if "chat_memory" not in st.session_state:
+    st.session_state.chat_memory = ChatMemory(max_messages=MAX_HISTORY_MESSAGES)
 
 
 # ---------------------------------------------------------------------------
@@ -68,7 +75,43 @@ def reset_chat():
     st.session_state.messages = []
     st.session_state.query_engine = None
     st.session_state.repo_ast = {}
+    st.session_state.chat_memory.clear_history()
     gc.collect()
+
+
+def _build_history_context() -> str:
+    """
+    Build a formatted conversation-history block for the LLM prompt.
+
+    **Follow-up handling**:  Users often send short, context-dependent
+    messages such as "Explain it better", "What about this function?",
+    or "Can you optimize it?".  These rely on the LLM understanding
+    *what* "it" or "this" refers to from earlier turns.
+
+    By injecting the most recent exchanges (capped by
+    ``MAX_HISTORY_MESSAGES``) into every prompt, the model can:
+      - Resolve pronouns and references ("it", "that", "this function")
+      - Maintain topical continuity across turns
+      - Build on its own prior answers when asked to refine/optimize
+
+    Returns an empty string when there is no history yet, so the very
+    first query is unaffected.
+    """
+    history = st.session_state.chat_memory.get_history()
+    if not history:
+        return ""
+
+    lines = []
+    for msg in history:
+        role = "User" if msg["role"] == "user" else "Assistant"
+        lines.append(f"{role}: {msg['content']}")
+
+    return (
+        "Previous conversation (use this to resolve references like "
+        "'it', 'this', 'that function', etc.):\n"
+        + "\n".join(lines)
+        + "\n---------------------\n"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -129,16 +172,53 @@ with st.sidebar:
                     similarity_top_k=4,
                 )
 
-                # Custom prompt template
+                # ---------------------------------------------------------
+                # Prompt template — follow-up & grounding aware
+                # ---------------------------------------------------------
+                # The prompt is structured in clear sections:
+                #   1. System role + follow-up handling instruction
+                #   2. Conversation history (recent turns)
+                #   3. Retrieved code context (RAG chunks)
+                #   4. Grounding rule (avoid hallucination)
+                #   5. Current query
+                #
+                # This layout lets the LLM resolve vague follow-ups
+                # ("explain it better", "optimize it") by reading the
+                # conversation history *before* the retrieved code, so
+                # it knows what the user is referring to.
+                # ---------------------------------------------------------
                 qa_prompt_tmpl_str = (
-                    "Context information is below.\n"
+                    "You are a helpful AI coding assistant specialised in "
+                    "understanding codebases.\n\n"
+                    #
+                    # --- Follow-up handling instruction ---
+                    "IMPORTANT: Use previous conversation context to "
+                    "understand the user's intent. If the user says "
+                    "'explain it', 'what about this function', "
+                    "'can you optimize it', or similar short follow-ups, "
+                    "refer to the conversation history below to determine "
+                    "what 'it' or 'this' refers to.\n\n"
+                    #
+                    # --- Conversation history (filled at query time) ---
+                    "{chat_history}"
+                    #
+                    # --- Retrieved code context (RAG) ---
+                    "Retrieved code context is below.\n"
                     "---------------------\n"
                     "{context_str}\n"
-                    "---------------------\n"
-                    "You are a helpful AI coding assistant. Given the "
-                    "context information above, think step by step to "
-                    "answer the query in a crisp manner. If you don't "
-                    "know the answer say 'I don't know!'.\n"
+                    "---------------------\n\n"
+                    #
+                    # --- Grounding rule ---
+                    "GROUNDING RULE: Base your answer strictly on the "
+                    "retrieved code context above. Do NOT invent code "
+                    "that does not appear in the context. If the context "
+                    "does not contain enough information, say "
+                    "'I don't know!' rather than guessing.\n\n"
+                    #
+                    # --- Current query ---
+                    "Given the conversation history and the retrieved "
+                    "code context, think step by step to answer the "
+                    "following query in a crisp manner.\n"
                     "Query: {query_str}\n"
                     "Answer: "
                 )
@@ -184,7 +264,10 @@ for message in st.session_state.messages:
 
 # Accept user input
 if prompt := st.chat_input("What's up?"):
+    # Record the user message in both Streamlit state and ChatMemory
     st.session_state.messages.append({"role": "user", "content": prompt})
+    st.session_state.chat_memory.add_user_message(prompt)
+
     with st.chat_message("user"):
         st.markdown(prompt)
 
@@ -197,12 +280,34 @@ if prompt := st.chat_input("What's up?"):
         if query_engine is None:
             full_response = "⚠️ Please load a GitHub repository first."
         else:
-            # Include repo AST context in the query for structural awareness
-            streaming_response = query_engine.query(
+            # ----------------------------------------------------------
+            # Enriched query construction (follow-up support)
+            # ----------------------------------------------------------
+            # We inject three pieces of context into the query string:
+            #
+            # 1. **Conversation history** — so the LLM can resolve
+            #    references like "it", "this function", "optimize it".
+            #    This is the key mechanism for follow-up support.
+            #
+            # 2. **Repository AST** — structural overview of the repo
+            #    for file/class/function awareness.
+            #
+            # 3. **The user's current question** — the actual prompt.
+            #
+            # Together with the RAG-retrieved code chunks (injected by
+            # llama_index via {context_str}), this gives the LLM the
+            # full picture: what was discussed, what the code looks
+            # like, and what the user is currently asking.
+            # ----------------------------------------------------------
+            history_ctx = _build_history_context()
+            enriched_query = (
+                f"{history_ctx}"
                 f"Given the repository AST:\n"
                 f"{json.dumps(st.session_state.repo_ast, indent=2)}\n\n"
                 f"And the following question: {prompt}"
             )
+
+            streaming_response = query_engine.query(enriched_query)
 
             for chunk in streaming_response.response_gen:
                 full_response += chunk
@@ -210,6 +315,8 @@ if prompt := st.chat_input("What's up?"):
 
         message_placeholder.markdown(full_response)
 
+    # Record the assistant response in both Streamlit state and ChatMemory
     st.session_state.messages.append(
         {"role": "assistant", "content": full_response}
     )
+    st.session_state.chat_memory.add_assistant_message(full_response)
