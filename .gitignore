@@ -36,3 +36,6 @@ env/
 cloned_repos/
 faiss_indices/
 .aider*
+.repomind_cache/
+.vscode/
+.wget-hsts

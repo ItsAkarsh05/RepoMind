@@ -6,10 +6,12 @@
   <p>
     <img alt="Python" src="https://img.shields.io/badge/Python-3.10+-blue?style=for-the-badge&logo=python&logoColor=white">
     <img alt="Streamlit" src="https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white">
+    <img alt="Flask" src="https://img.shields.io/badge/Flask-000000?style=for-the-badge&logo=flask&logoColor=white">
     <img alt="PyTorch" src="https://img.shields.io/badge/PyTorch-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white">
     <img alt="FAISS" src="https://img.shields.io/badge/FAISS-02303A?style=for-the-badge&logo=meta&logoColor=white">
+    <img alt="LangChain" src="https://img.shields.io/badge/LangChain-121212?style=for-the-badge&logo=chainlink&logoColor=white">
+    <img alt="LlamaIndex" src="https://img.shields.io/badge/LlamaIndex-8E24AA?style=for-the-badge">
     <img alt="Ollama" src="https://img.shields.io/badge/Ollama-000000?style=for-the-badge&logo=ollama&logoColor=white">
-    <a href="#"><img alt="License" src="https://img.shields.io/badge/License-MIT-16a34a?style=for-the-badge"></a>
   </p>
 
   <p>
@@ -37,13 +39,13 @@
 
 ## 📖 Overview
 
-### What problem it solves
+### 🤔 The Problem
 Navigating and understanding a large, unfamiliar, or legacy GitHub codebase can take days. Developers struggle to figure out where functions are defined, how dependencies trace back globally, and what the overall architecture looks like before writing a single line of code.
 
-### What the project does
+### 💡 The Solution
 RepoMind clones any public GitHub repository, parses the entire Abstract Syntax Tree (AST), and embeds the code into a semantic vector space using FAISS and HuggingFace models. You can then **chat directly with the code** and **generate graphical node-based visualizations** (Directory Structure, Dependencies, and Call Graphs) to instantly understand how the repository ticks.
 
-### Who it is for
+### 👥 Who is this for?
 - **Software Engineers** joining a new project or onboarding to a massive microservice.
 - **Code Reviewers** needing extra architectural context on large pull requests.
 - **Open Source Contributors** trying to find the exact file to fix a bug in a multi-thousand-file repository.
@@ -123,6 +125,18 @@ After you load a repository, you have access to three main tabs:
 - **RAG Orchestration:** [LlamaIndex](https://www.llamaindex.ai/) & [Langchain](https://python.langchain.com/)
 - **Embeddings Model:** `BAAI/bge-large-en-v1.5`
 - **Acceleration:** PyTorch (CUDA 12.1+ Support)
+
+---
+
+## 💻 System Requirements
+
+To run the local embeddings and the Ollama LLM smoothly, your system should meet these specifications:
+
+- **OS:** Windows 10/11, macOS (M-series recommended), or Linux
+- **RAM:** 8 GB minimum (16 GB highly recommended for parsing large repositories seamlessly)
+- **Storage:** ~10 GB free space (to download Ollama LLMs and cache HuggingFace embeddings)
+- **CPU:** Modern multi-core bridging (Intel i5/Ryzen 5 or better) for parallelized AST chunking
+- **GPU (Optional but Recommended):** 6GB+ VRAM (NVIDIA) for PyTorch CUDA acceleration to index massive codebases instantly. If a GPU is not available, RepoMind will gracefully fall back to CPU.
 
 ---
 
@@ -340,3 +354,9 @@ Contributions are what make the open-source community such an amazing place to l
 Distributed under the MIT License. See the `LICENSE` file for more information.
 
 <p align="right">(<a href="#top">back to top</a>)</p>
+
+---
+<div align="center">
+  <b>Made with ❤️ by Akarsh</b><br>
+  <i>Empowering developers to understand codebases instantly.</i>
+</div>
