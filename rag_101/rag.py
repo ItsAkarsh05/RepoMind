@@ -1,3 +1,9 @@
+"""
+Interactive command-line interface for the RAG pipeline.
+
+This module provides a loop to continually prompt the user for questions
+and outputs the LLM response generated from the retrieved context.
+"""
 import time
 from typing import List, Optional, Union
 
@@ -17,6 +23,13 @@ def main(
     file: str = "example_data/2401.08406.pdf",
     llm_name="llama3",
 ):
+    """
+    Start the interactive RAG query loop.
+
+    Args:
+        file (str): The document file path to load for context. Defaults to "example_data/2401.08406.pdf".
+        llm_name (str): The LLM model name to run via Ollama. Defaults to "llama3".
+    """
     docs = load_pdf(files=file)
 
     embedding_model = load_embedding_model()

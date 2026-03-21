@@ -3,6 +3,15 @@
 # ==========================================================================
 # Adapted from https://docs.streamlit.io/knowledge-base/tutorials/build-conversational-apps
 
+"""
+Main Streamlit application for RepoMind.
+
+This module provides the User Interface for the RepoMind application, allowing users
+to input a GitHub repository URL, ingest the codebase into a vector database,
+and interactively query the codebase using a Retrieval-Augmented Generation (RAG) pipeline.
+It also provides a visualization tab for repository structure, call graphs,
+and dependency graphs.
+"""
 import os
 import json
 import gc

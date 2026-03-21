@@ -1,3 +1,9 @@
+"""
+Client module for handling RAG (Retrieval-Augmented Generation) interactions.
+
+This module provides the `RAGClient` class which orchestrates PDF/repo loading,
+vector retrieval, reranking, and querying against an Ollama-backed LLM.
+"""
 from langchain.callbacks import FileCallbackHandler
 from langchain_community.chat_models import ChatOllama
 from langchain_core.output_parsers import StrOutputParser
@@ -16,10 +22,22 @@ from rag_101.retriever import (
 
 # main function to run the program and generate the response with prompt
 class RAGClient:
+    """
+    A client wrapping the RAG pipeline to query context-grounded information.
+
+    It abstracts the embedding generation, document retrieval, and LLM prompting chain.
+    """
     embedding_model = load_embedding_model()
     reranker_model = load_reranker_model()
 
     def __init__(self, files, model="llama3"):
+        """
+        Initialize the RAG client by loading documents and instantiating the query chain.
+
+        Args:
+            files (str | list): The file path(s) to load context from.
+            model (str): The backend LLM model to use with Ollama.
+        """
         docs = load_pdf(files=files)
         self.retriever = create_parent_retriever(docs, self.embedding_model)
 
@@ -41,6 +59,15 @@ class RAGClient:
         self.retriever.add_documents([Document(page_content=f"Repository AST:\n{ast_text}", metadata={"source": "repo_ast"})])
 
     def generate_repo_ast(repo_path):
+        """
+        Generate an AST summary of all Python files inside a directory.
+
+        Args:
+            repo_path (str): The root directory of the repository.
+
+        Returns:
+            dict: Summary mapping file paths to node counts.
+        """
         repo_summary = {}
         for root, dirs, files in os.walk(repo_path):
             for file in files:
@@ -60,6 +87,15 @@ class RAGClient:
         return repo_summary
 
     def query(self, question: str) -> str:
+        """
+        Submit a question to the RAG pipeline and return the generated answer text.
+
+        Args:
+            question (str): The user query.
+
+        Returns:
+            str: The raw string response from the LLM.
+        """
         response = self.chain.invoke({"context": "", "question": question, "repo_ast": json.dumps(self.repo_ast, indent=2)})
         return response
 
@@ -96,6 +132,15 @@ class RAGClient:
             yield r
 
     def retrieve_context(self, query: str):
+        """
+        Fetch and rerank relevant document chunks for the provided query.
+
+        Args:
+            query (str): The incoming user query.
+
+        Returns:
+            list: A list of relevant retrieved document chunks.
+        """
         return retrieve_context(
             query, retriever=self.retriever, reranker_model=self.reranker_model
         )

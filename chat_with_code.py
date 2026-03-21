@@ -1,3 +1,10 @@
+"""
+Standalone script for parsing, indexing, and querying a GitHub repository using LLamaIndex.
+
+This script demonstrates how to clone a repository, extract its Abstract Syntax Tree (AST),
+index the codebase using Langchain embeddings, and query the resulting vector store
+with a custom prompt utilizing Ollama.
+"""
 import os
 import ast
 
@@ -41,11 +48,29 @@ embed_model = LangchainEmbedding(lc_embedding_model)
 
 # utility functions
 def parse_github_url(url):
+    """
+    Parse a GitHub URL to extract the owner and repository name.
+
+    Args:
+        url (str): The GitHub repository URL.
+
+    Returns:
+        tuple: A tuple containing the (owner, repo_name), or (None, None) if parsing fails.
+    """
     pattern = r"https://github\.com/([^/]+)/([^/]+)"
     match = re.match(pattern, url)
     return match.groups() if match else (None, None)
 
 def clone_github_repo(repo_url):    
+    """
+    Clone a GitHub repository to the local filesystem.
+
+    Args:
+        repo_url (str): The URL of the repository to clone.
+
+    Returns:
+        None
+    """
     try:
         print('Cloning the repo ...')
         result = subprocess.run(["git", "clone", repo_url], check=True, text=True, capture_output=True)
@@ -55,9 +80,31 @@ def clone_github_repo(repo_url):
 
 # utility function to validate owner and repo
 def validate_owner_repo(owner, repo):
+    """
+    Validate that both the repository owner and name are present.
+
+    Args:
+        owner (str): The repository owner.
+        repo (str): The repository name.
+
+    Returns:
+        bool: True if both owner and repo are valid strings, False otherwise.
+    """
     return bool(owner) and bool(repo)
 
 def generate_repo_ast(repo_path):
+    """
+    Generate an Abstract Syntax Tree (AST) summary for all Python files in a repository.
+
+    Iterates through the repository directory, parses each `.py` file to count the 
+    occurrences of various AST node types, and compiles a summary report.
+
+    Args:
+        repo_path (str): The local path to the cloned repository.
+
+    Returns:
+        dict: A dictionary mapping file paths to their respective AST node counts or error messages.
+    """
     repo_summary = {}
     for root, dirs, files in os.walk(repo_path):
         for file in files:
@@ -79,6 +126,19 @@ def generate_repo_ast(repo_path):
 # Setup a query engine
 
 def setup_query_engine(github_url):
+    """
+    Set up a LlamaIndex query engine for a specified GitHub repository.
+
+    Clones the repository if not already present, loads its documents, extracts the AST,
+    indexes the data into a vector store using embeddings, and configures an Ollama-backed
+    query engine with a custom prompt.
+
+    Args:
+        github_url (str): The GitHub repository URL to index.
+
+    Returns:
+        llama_index.core.query_engine.BaseQueryEngine: The configured query engine, or None on failure.
+    """
     
     owner, repo = parse_github_url(github_url)
     

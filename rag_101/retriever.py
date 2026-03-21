@@ -1,3 +1,9 @@
+"""
+Retriever module providing utilities for building the RAG index and retrieving context.
+
+Includes functions for loading embedding and reranking models, chunking documents into
+parent-child pairs, and orchestrating the retrieval process.
+"""
 import os
 import ast
 
@@ -214,8 +220,21 @@ def create_parent_retriever(
     return retriever
 
 
-# Rerank the retrieved documents based on the query and reranker model
 def retrieve_context(query, retriever, reranker_model):
+    """
+    Retrieve and rerank relevant documents for a given query.
+
+    Args:
+        query (str): The search query.
+        retriever: The Langchain retriever instance.
+        reranker_model: The SentenceTransformer cross-encoder model for reranking.
+
+    Returns:
+        list: A list of relevant documents sorted by relevance score.
+        
+    Raises:
+        RAGException: If no relevant documents could be found for the query.
+    """
 
     # Get the relevant documents for the query. the get_relevant_documents method is part of the parent document retriever in langchain.
     retrieved_docs = retriever.get_relevant_documents(query)
@@ -238,6 +257,14 @@ def main(
     query: Optional[str] = None,
     llm_name="llama3",
 ):
+    """
+    Execute a single retrieval test query against a specified document.
+
+    Args:
+        file (str): Path to the target document.
+        query (Optional[str]): A test query.
+        llm_name (str): The LLM backend model mapping.
+    """
     docs = load_pdf(files=file)
     embedding_model = load_embedding_model()
     retriever = create_parent_retriever(docs, embedding_model)
@@ -253,6 +280,15 @@ def main(
     print("context:\n", context, "\n", "=" * 50, "\n")
 
 def generate_repo_ast(repo_path):
+    """
+    Generate an AST summary mapping each Python file in a repository to its node counts.
+
+    Args:
+        repo_path (str): Path to the repository.
+
+    Returns:
+        dict: A dictionary of file paths to their AST node counts.
+    """
     repo_summary = {}
     for root, dirs, files in os.walk(repo_path):
         for file in files:
