@@ -4,11 +4,12 @@
   <p><strong>A complete, context-aware AI coding assistant that helps you talk to, understand, and visualize your GitHub codebases.</strong></p>
 
   <p>
-    <a href="#"><img alt="Issues" src="https://img.shields.io/github/issues/Yash-Kavaiya/RepoMind?style=for-the-badge&color=2563eb"></a>
-    <a href="#"><img alt="Forks" src="https://img.shields.io/github/forks/Yash-Kavaiya/RepoMind?style=for-the-badge&color=2563eb"></a>
-    <a href="#"><img alt="Stars" src="https://img.shields.io/github/stars/Yash-Kavaiya/RepoMind?style=for-the-badge&color=eab308"></a>
+    <img alt="Python" src="https://img.shields.io/badge/Python-3.10+-blue?style=for-the-badge&logo=python&logoColor=white">
+    <img alt="Streamlit" src="https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white">
+    <img alt="PyTorch" src="https://img.shields.io/badge/PyTorch-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white">
+    <img alt="FAISS" src="https://img.shields.io/badge/FAISS-02303A?style=for-the-badge&logo=meta&logoColor=white">
+    <img alt="Ollama" src="https://img.shields.io/badge/Ollama-000000?style=for-the-badge&logo=ollama&logoColor=white">
     <a href="#"><img alt="License" src="https://img.shields.io/badge/License-MIT-16a34a?style=for-the-badge"></a>
-    <a href="#"><img alt="Python Version" src="https://img.shields.io/badge/Python-3.10+-blue?style=for-the-badge&logo=python&logoColor=white"></a>
   </p>
 
   <p>
@@ -52,12 +53,14 @@ RepoMind clones any public GitHub repository, parses the entire Abstract Syntax 
 ## 🌟 Features
 
 - ✨ **RAG-Powered Chat**: Ask questions about your code natively. The local LLM will scan your files and construct prompts grounded purely in your repository's logic.
-- 🧠 **Conversational Memory**: Follow-up questions work! The bot remembers recent messages, allowing natural dialogue like *"Can you optimize the function you just explained?"*
-- 🗺️ **Architecture Graphs**: Visualize your codebase instantly. Generating pure JSON endpoints that can be plugged into any frontend framework for:
+- ⚡ **Lightning Fast Ingestion**: Utilizes highly optimized `ThreadPoolExecutor` parallel processing to blaze through massive codebases in seconds.
+- 🧠 **Conversational Memory & Control**: Follow-up questions work! The built-in **History Tab** allows you to view contextual memory and reset the chat context instantly to prevent token bloat.
+- 🌍 **Multi-Language AST Support**: Robust Abstract Syntax Tree parsing for `Python`, `JavaScript`, `TypeScript`, and `Dart` codebases.
+- 🗺️ **Architecture Graphs**: Visualize your codebase instantly. Generates pure JSON endpoints and interactive Streamlit UI tabs for:
   - Repository Directory Trees
   - Function Call Graphs (who calls whom across files)
   - Modular Dependency Tracking (import hierarchies)
-- 🚀 **GPU Accelerated**: Built-in CUDA support via PyTorch to blaze through embedding massive codebases containing thousands of chunks.
+- 🚀 **GPU Accelerated**: Built-in CUDA support via PyTorch to efficiently embed thousands of chunks.
 - 🔒 **100% Local Privacy**: Runs entirely on your hardware via Ollama. No proprietary/enterprise code is ever sent to OpenAI, Anthropic, or external API providers.
 
 ---
@@ -66,11 +69,11 @@ RepoMind clones any public GitHub repository, parses the entire Abstract Syntax 
 
 When you submit a GitHub URL, RepoMind executes a highly optimized pipeline:
 1. **Repository Ingestion:** Clones the repo locally to `cloned_repos/`.
-2. **AST Parsing:** Uses Python's native AST module to break down files into logical components (Classes, Functions, Imports).
-3. **Text Chunking:** Fragments the code into semantically coherent overlapping chunks.
-4. **Vector Embedding:** Uses `BAAI/bge-large-en-v1.5` (via Langchain) to generate dense vector embeddings, leveraging GPU acceleration if available.
+2. **Multi-Language AST Parsing:** Uses native `ast` modules and advanced regex trees to logically break down files across Python, JS/TS, and Dart.
+3. **Parallel Text Chunking:** Fragments the code into semantically coherent overlapping chunks across all CPU cores simultaneously.
+4. **Vector Embedding:** Uses `BAAI/bge-large-en-v1.5` to generate dense vector embeddings, leveraging GPU acceleration if available.
 5. **FAISS Indexing:** Stores the vectors in a high-speed local index (`faiss_indices/`).
-6. **LlamaIndex Query Engine:** Routes user queries through an Ollama-hosted LLM (`qwen2.5-coder:3b`) using the retrieved contexts.
+6. **LlamaIndex Query Engine:** Routes user queries through an Ollama-hosted LLM (`qwen2.5-coder`) using highly tuned, token-efficient context windows.
 
 ---
 
@@ -91,19 +94,19 @@ When you submit a GitHub URL, RepoMind executes a highly optimized pipeline:
   5. generates graph data (structure/call/dependencies) for the UI
 </details>
 
-### 2. Visualizations inside the app
-After you load a repository, open the `📊 Visualize` tab. You can generate:
+### 2. Streamlit UI Tabs
+After you load a repository, you have access to three main tabs:
 <details>
-  <summary>File Structure</summary>
-  A hierarchical directory tree derived from your local clone.
+  <summary>💬 Chat</summary>
+  Talk directly to your codebase. Ask it where things are, how functions work, or tell it to rewrite chunks of code.
 </details>
 <details>
-  <summary>Call Graph</summary>
-  A function-to-function graph showing how calls flow across files.
+  <summary>📊 Visualize</summary>
+  Generate hierarchical file structures, dependency webs, and robust function call graphs natively inside the UI.
 </details>
 <details>
-  <summary>Dependencies</summary>
-  An import-based graph mapping file-level relationships.
+  <summary>📜 History</summary>
+  Inspect what the LLM remembers about the conversation. Easily monitor message counts and completely reset the chat to clear the context window block.
 </details>
 
 ---
