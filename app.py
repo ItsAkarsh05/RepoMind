@@ -304,10 +304,10 @@ st.markdown("""
 
 
 # ---------------------------------------------------------------------------
-# Main content — two top-level tabs
+# Main content — three top-level tabs
 # ---------------------------------------------------------------------------
 
-tab_chat, tab_viz = st.tabs(["💬 Chat", "📊 Visualize"])
+tab_chat, tab_viz, tab_history = st.tabs(["💬 Chat", "📊 Visualize", "📜 History"])
 
 # ═══════════════════════════════════════════════════════════════════════
 # TAB 1: Chat
@@ -422,3 +422,24 @@ with tab_viz:
                         build_dependency_graph(repo_path_viz)
                     )
             render_dependency_graph(st.session_state.viz_cache["dep_graph"])
+
+# ═══════════════════════════════════════════════════════════════════════
+# TAB 3: History
+# ═══════════════════════════════════════════════════════════════════════
+
+with tab_history:
+    col_hist1, col_hist2 = st.columns([6, 1])
+    with col_hist1:
+        st.header("Chat History")
+    with col_hist2:
+        st.button("Reset Chat", type="primary", on_click=reset_chat, key="reset_chat_history_tab")
+        
+    history = st.session_state.chat_memory.get_history()
+    if not history:
+        st.info("No chat history available for the current session.")
+    else:
+        st.json({
+            "message_count": len(history),
+            "history": history
+        })
+
