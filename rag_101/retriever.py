@@ -294,7 +294,7 @@ def generate_repo_ast(repo_path):
         for file in files:
             if file.endswith('.py'):
                 file_path = os.path.join(root, file)
-                with open(file_path, 'r') as f:
+                with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
                     try:
                         tree = ast.parse(f.read())
                         # Count the number of each type of AST node

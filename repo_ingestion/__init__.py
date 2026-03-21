@@ -70,14 +70,22 @@ def ingest_github_repo(
     logger.info("Starting ingestion of '%s/%s' …", owner, repo)
     repo_path = clone_repository(github_url, clone_dir=clone_dir)
 
-    # Step 2 — Traverse source files
+    # Step 2 — Traverse source files and chunk in parallel
     all_chunks: List[CodeChunk] = []
-    file_count = 0
-
+    
+    file_paths = []
     for abs_path, rel_path in traverse_repository(repo_path):
-        file_count += 1
-        chunks = chunk_file(abs_path)
-        all_chunks.extend(chunks)
+        file_paths.append(abs_path)
+        
+    file_count = len(file_paths)
+    
+    import concurrent.futures
+    if file_paths:
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            # chunk_file handles file I/O, so threads give a massive speedup here
+            for chunks in executor.map(chunk_file, file_paths):
+                if chunks:
+                    all_chunks.extend(chunks)
 
     logger.info(
         "Traversed %d files → produced %d chunks.", file_count, len(all_chunks)

@@ -54,8 +54,8 @@ CLONE_DIR = os.path.join(os.getcwd(), "cloned_repos")
 FAISS_DIR = os.path.join(os.getcwd(), "faiss_indices")
 
 # Maximum number of recent chat messages to include in LLM context.
-# Keeps token usage bounded while providing conversational continuity.
-MAX_HISTORY_MESSAGES = 10
+# Reduced from 10 to 4 to speed up LLM generation speeds.
+MAX_HISTORY_MESSAGES = 4
 
 # Logging
 logging.basicConfig(level=logging.INFO)
@@ -195,7 +195,7 @@ with st.sidebar:
                 Settings.llm = llm
                 query_engine = index.as_query_engine(
                     streaming=True,
-                    similarity_top_k=4,
+                    similarity_top_k=3,  # Reduced from 4 for faster inference
                 )
 
                 # ---------------------------------------------------------
@@ -317,7 +317,7 @@ with tab_chat:
     col1, col2 = st.columns([6, 1])
 
     with col1:
-        st.header("Chat With Your Code! Powered by LLama3 🦙🚀")
+        st.header("Chat With Your Code! Powered by Qwen Coder 🦙🚀")
 
     with col2:
         st.button("Clear ↺", on_click=reset_chat)
