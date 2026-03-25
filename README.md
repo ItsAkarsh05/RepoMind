@@ -73,8 +73,8 @@ When you submit a GitHub URL, RepoMind executes a highly optimized pipeline:
 1. **Repository Ingestion:** Clones the repo locally to `cloned_repos/`.
 2. **Multi-Language AST Parsing:** Uses native `ast` modules and advanced regex trees to logically break down files across Python, JS/TS, and Dart.
 3. **Parallel Text Chunking:** Fragments the code into semantically coherent overlapping chunks across all CPU cores simultaneously.
-4. **Vector Embedding:** Uses `BAAI/bge-large-en-v1.5` to generate dense vector embeddings, leveraging GPU acceleration if available.
-5. **FAISS Indexing:** Stores the vectors in a high-speed local index (`faiss_indices/`).
+4. **Vector Embedding:** Uses `BAAI/bge-small-en-v1.5` to generate dense vector embeddings with batch processing, leveraging GPU acceleration if available.
+5. **LlamaIndex Indexing:** Builds a single-pass `VectorStoreIndex` directly from code chunks — no redundant FAISS double-indexing.
 6. **LlamaIndex Query Engine:** Routes user queries through an Ollama-hosted LLM (`qwen2.5-coder`) using highly tuned, token-efficient context windows.
 
 ---
@@ -90,26 +90,32 @@ When you submit a GitHub URL, RepoMind executes a highly optimized pipeline:
   <summary>What happens in the pipeline?</summary>
   RepoMind:
   1. clones your GitHub repo into `cloned_repos/`
-  2. extracts code chunks via traversal + chunking
-  3. embeds chunks into a local FAISS index in `faiss_indices/`
+  2. extracts code chunks via traversal + AST-aware chunking
+  3. embeds chunks into a LlamaIndex VectorStoreIndex (single pass)
   4. answers questions using Ollama + LlamaIndex, constrained by retrieved chunks
   5. generates graph data (structure/call/dependencies) for the UI
 </details>
 
-### 2. Streamlit UI Tabs
-After you load a repository, you have access to three main tabs:
-<details>
-  <summary>💬 Chat</summary>
-  Talk directly to your codebase. Ask it where things are, how functions work, or tell it to rewrite chunks of code.
-</details>
-<details>
-  <summary>📊 Visualize</summary>
-  Generate hierarchical file structures, dependency webs, and robust function call graphs natively inside the UI.
-</details>
-<details>
-  <summary>📜 History</summary>
-  Inspect what the LLM remembers about the conversation. Easily monitor message counts and completely reset the chat to clear the context window block.
-</details>
+### 2. Streamlit UI
+
+#### 💬 Chat — ChatGPT-style Interface
+Talk directly to your codebase with a scrollable chat container and pinned input.
+
+| Ingesting Repository | Repo Loaded & Ready |
+|---|---|
+| <img src="screenshots/Screenshot 2026-03-26 010119.png" width="100%" style="border-radius:8px;"/> | <img src="screenshots/Screenshot 2026-03-26 010128.png" width="100%" style="border-radius:8px;"/> |
+
+#### 🤖 AI-Powered Conversation
+Ask questions and get context-aware answers grounded in your codebase.
+
+<img src="screenshots/Screenshot 2026-03-26 011057.png" width="100%" style="border-radius:8px;"/>
+
+#### 📊 Visualize — Interactive Code Graphs
+Generate file structure trees, function call graphs, and dependency webs natively inside the UI.
+
+| 📂 File Structure | 🔗 Call Graph | 🌐 Dependencies |
+|---|---|---|
+| <img src="screenshots/Screenshot 2026-03-26 010431.png" width="100%" style="border-radius:8px;"/> | <img src="screenshots/Screenshot 2026-03-26 010437.png" width="100%" style="border-radius:8px;"/> | <img src="screenshots/Screenshot 2026-03-26 010448.png" width="100%" style="border-radius:8px;"/> |
 
 ---
 
@@ -123,7 +129,7 @@ After you load a repository, you have access to three main tabs:
 - **Local LLM Engine:** [Ollama](https://ollama.com/) running *Qwen 2.5 Coder*
 - **Vector Database:** [FAISS](https://faiss.ai/) (Facebook AI Similarity Search)
 - **RAG Orchestration:** [LlamaIndex](https://www.llamaindex.ai/) & [Langchain](https://python.langchain.com/)
-- **Embeddings Model:** `BAAI/bge-large-en-v1.5`
+- **Embeddings Model:** `BAAI/bge-small-en-v1.5` (fast, lightweight)
 - **Acceleration:** PyTorch (CUDA 12.1+ Support)
 
 ---
