@@ -33,14 +33,14 @@ class RAGException(Exception):
 
 
 def load_embedding_model(
-    model_name: str = "BAAI/bge-large-en-v1.5", device: str = None
+    model_name: str = "BAAI/bge-small-en-v1.5", device: str = None
 ) -> HuggingFaceBgeEmbeddings:
     """
     Loads and returns a HuggingFaceBgeEmbeddings model for embedding text. This embedding model is used to encode the documents and queries for retrieval.
 
     Args:
-        model_name (str): The name or path of the pre-trained model to load. Defaults to "BAAI/bge-large-en-v1.5".
-        device (str): The device to use for model inference. Defaults to "cuda".
+        model_name (str): The name or path of the pre-trained model to load. Defaults to "BAAI/bge-small-en-v1.5".
+        device (str): The device to use for model inference. Defaults to "cuda" if available, else "cpu".
 
     Returns:
         HuggingFaceBgeEmbeddings: The loaded HuggingFaceBgeEmbeddings model.
@@ -51,8 +51,9 @@ def load_embedding_model(
         
     model_kwargs = {"device": device}
     encode_kwargs = {
-        "normalize_embeddings": True
-    }  # set True to compute cosine similarity
+        "normalize_embeddings": True,
+        "batch_size": 32,  # batch for better CPU/GPU throughput
+    }
     embedding_model = HuggingFaceBgeEmbeddings(
         model_name=model_name,
         model_kwargs=model_kwargs,

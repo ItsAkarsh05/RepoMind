@@ -17,6 +17,7 @@ import json
 import gc
 import uuid
 import logging
+import html
 
 import streamlit as st
 import nest_asyncio
@@ -28,12 +29,15 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-from llama_index.core import Settings, PromptTemplate, VectorStoreIndex
+from llama_index.core import Settings, PromptTemplate, VectorStoreIndex, Document
 from llama_index.llms.ollama import Ollama
 from llama_index.embeddings.langchain import LangchainEmbedding
 
 from rag_101.retriever import load_embedding_model, generate_repo_ast
-from repo_ingestion import ingest_github_repo, validate_github_url
+from repo_ingestion import (
+    validate_github_url, clone_repository,
+    traverse_repository, chunk_file,
+)
 from memory import ChatMemory
 from visualization import (
     get_repo_structure, build_call_graph, build_dependency_graph,
@@ -49,9 +53,8 @@ WEIGHTS_DIR = os.environ.get("WEIGHTS_DIR", os.path.join(os.getcwd(), "weights")
 os.environ.setdefault("HF_HOME", WEIGHTS_DIR)
 os.environ.setdefault("TORCH_HOME", WEIGHTS_DIR)
 
-# Directories for cloned repos and FAISS indices
+# Directories for cloned repos
 CLONE_DIR = os.path.join(os.getcwd(), "cloned_repos")
-FAISS_DIR = os.path.join(os.getcwd(), "faiss_indices")
 
 # Maximum number of recent chat messages to include in LLM context.
 # Reduced from 10 to 4 to speed up LLM generation speeds.
@@ -145,9 +148,36 @@ def _build_history_context() -> str:
 # ---------------------------------------------------------------------------
 
 with st.sidebar:
-    github_url = st.text_input("GitHub Repository URL")
-    process_button = st.button("Load Repository")
+    # ── Sidebar branding ──
+    st.markdown(
+        '<div class="sidebar-brand">'
+        '<span style="font-size:2rem;">🧠</span>'
+        '<h1 style="margin:0;font-size:1.4rem;font-weight:700;'
+        'background:linear-gradient(135deg,#667eea,#764ba2);'
+        '-webkit-background-clip:text;-webkit-text-fill-color:transparent;">'
+        'RepoMind</h1>'
+        '<p style="margin:0;font-size:0.78rem;opacity:0.6;">'
+        'Chat with any codebase</p>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown("---")
+
+    github_url = st.text_input(
+        "🔗 GitHub Repository URL",
+        placeholder="https://github.com/owner/repo",
+    )
+    process_button = st.button(
+        "🚀 Load Repository", type="primary", use_container_width=True,
+    )
     message_container = st.empty()
+
+    st.markdown("---")
+    st.markdown(
+        '<p style="text-align:center;font-size:0.72rem;opacity:0.4;">'
+        'Powered by Qwen Coder · FAISS · LlamaIndex</p>',
+        unsafe_allow_html=True,
+    )
 
     if process_button and github_url:
         # ---- Validate the URL first ----
@@ -160,42 +190,42 @@ with st.sidebar:
         with st.spinner(f"Ingesting {owner}/{repo} — cloning, chunking, embedding …"):
             try:
                 # ========================================================
-                # NEW: Use the modular repo_ingestion pipeline
+                # Single-pass pipeline: clone → traverse → chunk → embed
+                # (No double-indexing: FAISS build removed, documents
+                #  are embedded only once via VectorStoreIndex)
                 # ========================================================
-                vectorstore, repo_path = ingest_github_repo(
-                    github_url=github_url,
-                    clone_dir=CLONE_DIR,
-                    faiss_dir=FAISS_DIR,
-                    embedding_model=lc_embedding_model,
-                )
+                repo_path = clone_repository(github_url, clone_dir=CLONE_DIR)
 
-                # Convert the FAISS vectorstore into a llama_index query
-                # engine by loading documents back via SimpleDirectoryReader
-                # (the FAISS store is langchain-based, so we bridge through
-                # the vectorstore's retriever).
-                from llama_index.core import SimpleDirectoryReader
+                # Traverse & chunk source files using AST-aware chunking
+                import concurrent.futures
+                file_paths = [p for p, _ in traverse_repository(repo_path)]
+                all_chunks = []
+                if file_paths:
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        for chunks in executor.map(chunk_file, file_paths):
+                            if chunks:
+                                all_chunks.extend(chunks)
 
-                loader = SimpleDirectoryReader(
-                    input_dir=repo_path,
-                    required_exts=[
-                        ".py", ".ipynb", ".js", ".jsx",
-                        ".ts", ".tsx", ".md", ".java",
-                        ".dart", ".cpp", ".c", ".go",
-                        ".rs", ".kt", ".swift",
-                    ],
-                    recursive=True,
-                )
-                docs = loader.load_data()
+                # Convert CodeChunks → llama_index Documents (single pass)
+                docs = [
+                    Document(
+                        text=chunk.content,
+                        metadata=chunk.to_metadata(),
+                    )
+                    for chunk in all_chunks
+                ]
 
-                # Create llama_index vector index for the query engine
+                # Build vector index — embeddings computed ONCE here
                 Settings.embed_model = embed_model
-                index = VectorStoreIndex.from_documents(docs)
+                index = VectorStoreIndex.from_documents(
+                    docs, show_progress=True,
+                )
 
                 # Setup query engine with streaming
                 Settings.llm = llm
                 query_engine = index.as_query_engine(
                     streaming=True,
-                    similarity_top_k=3,  # Reduced from 4 for faster inference
+                    similarity_top_k=3,
                 )
 
                 # ---------------------------------------------------------
@@ -279,7 +309,21 @@ with st.sidebar:
 
 st.markdown("""
 <style>
-    /* Tab styling */
+    /* ── Import premium font ── */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+    /* ── Global typography ── */
+    html, body, [class*="css"] {
+        font-family: 'Inter', sans-serif;
+    }
+
+    /* ── Sidebar branding ── */
+    .sidebar-brand {
+        text-align: center;
+        padding: 12px 0 4px;
+    }
+
+    /* ── Tab styling ── */
     .stTabs [data-baseweb="tab-list"] {
         gap: 8px;
         padding: 0 4px;
@@ -289,15 +333,149 @@ st.markdown("""
         border-radius: 10px 10px 0 0;
         font-weight: 600;
         font-size: 1.05rem;
+        transition: all 0.2s ease;
     }
     .stTabs [aria-selected="true"] {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white !important;
     }
-    /* Graphviz container */
+
+    /* ── Chat message bubbles ── */
+    [data-testid="stChatMessage"] {
+        border-radius: 16px;
+        padding: 14px 18px;
+        margin-bottom: 12px;
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        animation: fadeSlideIn 0.3s ease-out;
+    }
+
+    /* User bubble */
+    [data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-user"]) {
+        background: rgba(102, 126, 234, 0.10);
+    }
+    /* Assistant bubble */
+    [data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-assistant"]) {
+        background: rgba(118, 75, 162, 0.08);
+    }
+
+    /* ── Avatar styling ── */
+    [data-testid="stChatMessage"] [data-testid^="chatAvatarIcon"] {
+        font-size: 1.5rem;
+    }
+
+    /* ── Chat input ── */
+    [data-testid="stChatInput"] textarea {
+        border-radius: 14px !important;
+        border: 1px solid rgba(102, 126, 234, 0.3) !important;
+        font-family: 'Inter', sans-serif !important;
+        font-size: 0.95rem !important;
+        transition: border-color 0.2s ease;
+    }
+    [data-testid="stChatInput"] textarea:focus {
+        border-color: #667eea !important;
+        box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.15) !important;
+    }
+
+    /* ── Buttons ── */
+    .stButton > button[kind="primary"] {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+        border: none !important;
+        font-weight: 600 !important;
+        letter-spacing: 0.3px;
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .stButton > button[kind="primary"]:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 14px rgba(102, 126, 234, 0.35);
+    }
+
+    /* ── Code blocks ── */
+    code {
+        border-radius: 6px;
+        font-size: 0.88em;
+    }
+
+    /* ── Empty state card ── */
+    .empty-state {
+        text-align: center;
+        padding: 60px 24px;
+        border-radius: 20px;
+        border: 1px dashed rgba(102, 126, 234, 0.25);
+        background: rgba(102, 126, 234, 0.03);
+        margin: 20px 0;
+    }
+    .empty-state .icon { font-size: 3rem; margin-bottom: 8px; }
+    .empty-state h3 { margin: 8px 0 4px; opacity: 0.7; }
+    .empty-state p { opacity: 0.5; font-size: 0.95rem; }
+
+    /* ── History bubbles ── */
+    .history-msg {
+        padding: 12px 16px;
+        border-radius: 14px;
+        margin-bottom: 10px;
+        font-size: 0.92rem;
+        line-height: 1.55;
+        animation: fadeSlideIn 0.25s ease-out;
+    }
+    .history-msg.user {
+        background: rgba(102, 126, 234, 0.10);
+        border-left: 3px solid #667eea;
+    }
+    .history-msg.assistant {
+        background: rgba(118, 75, 162, 0.08);
+        border-left: 3px solid #764ba2;
+    }
+    .history-msg .role {
+        font-weight: 600;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        opacity: 0.6;
+        margin-bottom: 4px;
+    }
+
+    /* ── Chat container (ChatGPT-style) ── */
+    [data-testid="stVerticalBlockBorderWrapper"]:has(
+        > div > [data-testid="stVerticalBlock"] [data-testid="stChatMessage"]
+    ) {
+        border-radius: 16px !important;
+        border: 1px solid rgba(102, 126, 234, 0.12) !important;
+    }
+    /* Auto-scroll chat to bottom */
+    [data-testid="stVerticalBlockBorderWrapper"]:has(
+        > div > [data-testid="stVerticalBlock"] [data-testid="stChatMessage"]
+    ) > div {
+        display: flex;
+        flex-direction: column-reverse;
+    }
+
+    /* ── Chat input pinned ── */
+    [data-testid="stChatInput"] {
+        position: sticky;
+        bottom: 0;
+        z-index: 100;
+        padding-top: 8px;
+    }
+
+    /* ── Graphviz container ── */
     .stGraphVizChart {
         border-radius: 12px;
         padding: 8px;
+    }
+
+    /* ── Smooth scrollbar ── */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-thumb {
+        background: rgba(102, 126, 234, 0.3);
+        border-radius: 4px;
+    }
+
+    /* ── Fade-in animation ── */
+    @keyframes fadeSlideIn {
+        from { opacity: 0; transform: translateY(8px); }
+        to   { opacity: 1; transform: translateY(0); }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -317,49 +495,73 @@ with tab_chat:
     col1, col2 = st.columns([6, 1])
 
     with col1:
-        st.header("Chat With Your Code! Powered by Qwen Coder 🦙🚀")
+        st.markdown(
+            '<h2 style="margin:0;background:linear-gradient(135deg,#667eea,#764ba2);'
+            '-webkit-background-clip:text;-webkit-text-fill-color:transparent;'
+            'font-weight:700;">Chat With Your Code</h2>'
+            '<p style="margin:0 0 8px;opacity:0.5;font-size:0.88rem;">'
+            'Ask questions about the loaded repository</p>',
+            unsafe_allow_html=True,
+        )
 
     with col2:
-        st.button("Clear ↺", on_click=reset_chat)
+        st.button("🗑 Clear", on_click=reset_chat)
 
-    # Display chat history
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+    # ── Scrollable chat container (ChatGPT-style) ──
+    chat_container = st.container(height=500)
 
-    # Accept user input
-    if prompt := st.chat_input("What's up?"):
+    with chat_container:
+        # Empty state when no messages
+        if not st.session_state.messages:
+            st.markdown(
+                '<div class="empty-state">'
+                '<div class="icon">💬</div>'
+                '<h3>Start a conversation</h3>'
+                '<p>Load a GitHub repository from the sidebar, '
+                'then ask anything about the code.</p></div>',
+                unsafe_allow_html=True,
+            )
+
+        # Display chat history
+        for message in st.session_state.messages:
+            avatar = "🧑\u200d💻" if message["role"] == "user" else "🧠"
+            with st.chat_message(message["role"], avatar=avatar):
+                st.markdown(message["content"])
+
+    # ── Chat input (pinned below the container) ──
+    if prompt := st.chat_input("Ask anything about the codebase…"):
         # Record the user message in both Streamlit state and ChatMemory
         st.session_state.messages.append({"role": "user", "content": prompt})
         st.session_state.chat_memory.add_user_message(prompt)
 
-        with st.chat_message("user"):
-            st.markdown(prompt)
+        with chat_container:
+            with st.chat_message("user", avatar="🧑\u200d💻"):
+                st.markdown(prompt)
 
-        with st.chat_message("assistant"):
-            message_placeholder = st.empty()
-            full_response = ""
+            with st.chat_message("assistant", avatar="🧠"):
+                message_placeholder = st.empty()
+                full_response = ""
 
-            query_engine = st.session_state.query_engine
+                query_engine = st.session_state.query_engine
 
-            if query_engine is None:
-                full_response = "⚠️ Please load a GitHub repository first."
-            else:
-                history_ctx = _build_history_context()
-                enriched_query = (
-                    f"{history_ctx}"
-                    f"Given the repository AST:\n"
-                    f"{json.dumps(st.session_state.repo_ast, indent=2)}\n\n"
-                    f"And the following question: {prompt}"
-                )
+                if query_engine is None:
+                    full_response = "⚠️ Please load a GitHub repository first."
+                else:
+                    history_ctx = _build_history_context()
+                    enriched_query = (
+                        f"{history_ctx}"
+                        f"Given the repository AST:\n"
+                        f"{json.dumps(st.session_state.repo_ast, indent=2)}\n\n"
+                        f"And the following question: {prompt}"
+                    )
 
-                streaming_response = query_engine.query(enriched_query)
+                    streaming_response = query_engine.query(enriched_query)
 
-                for chunk in streaming_response.response_gen:
-                    full_response += chunk
-                    message_placeholder.markdown(full_response + "▌")
+                    for chunk in streaming_response.response_gen:
+                        full_response += chunk
+                        message_placeholder.markdown(full_response + "▌")
 
-            message_placeholder.markdown(full_response)
+                message_placeholder.markdown(full_response)
 
         # Record the assistant response in both Streamlit state and ChatMemory
         st.session_state.messages.append(
@@ -375,11 +577,10 @@ with tab_chat:
 with tab_viz:
     if not st.session_state.repo_path:
         st.markdown(
-            '<div style="text-align:center;padding:80px 20px;">'
-            '<p style="font-size:3rem;">📊</p>'
-            '<h2 style="color:#9E9E9E;">No Repository Loaded</h2>'
-            '<p style="color:#BDBDBD;font-size:1.1rem;">'
-            'Enter a GitHub URL in the sidebar and click '
+            '<div class="empty-state">'
+            '<div class="icon">📊</div>'
+            '<h3>No Repository Loaded</h3>'
+            '<p>Enter a GitHub URL in the sidebar and click '
             '<b>Load Repository</b> to unlock visualizations.</p></div>',
             unsafe_allow_html=True,
         )
@@ -430,16 +631,43 @@ with tab_viz:
 with tab_history:
     col_hist1, col_hist2 = st.columns([6, 1])
     with col_hist1:
-        st.header("Chat History")
+        st.markdown(
+            '<h2 style="margin:0;background:linear-gradient(135deg,#667eea,#764ba2);'
+            '-webkit-background-clip:text;-webkit-text-fill-color:transparent;'
+            'font-weight:700;">Conversation History</h2>',
+            unsafe_allow_html=True,
+        )
     with col_hist2:
-        st.button("Reset Chat", type="primary", on_click=reset_chat, key="reset_chat_history_tab")
-        
+        st.button(
+            "🗑 Reset", type="primary", on_click=reset_chat,
+            key="reset_chat_history_tab",
+        )
+
     history = st.session_state.chat_memory.get_history()
     if not history:
-        st.info("No chat history available for the current session.")
+        st.markdown(
+            '<div class="empty-state">'
+            '<div class="icon">📜</div>'
+            '<h3>No History Yet</h3>'
+            '<p>Your conversation will appear here as you chat.</p></div>',
+            unsafe_allow_html=True,
+        )
     else:
-        st.json({
-            "message_count": len(history),
-            "history": history
-        })
-
+        st.markdown(
+            f'<p style="opacity:0.5;font-size:0.85rem;margin-bottom:12px;">'
+            f'💬 {len(history)} message{"s" if len(history) != 1 else ""} '
+            f'in this session</p>',
+            unsafe_allow_html=True,
+        )
+        for msg in history:
+            role = msg["role"]
+            label = "🧑\u200d💻 You" if role == "user" else "🧠 RepoMind"
+            css_class = "user" if role == "user" else "assistant"
+            # Escape HTML in content to prevent injection
+            safe_content = html.escape(msg["content"]).replace("\n", "<br>")
+            st.markdown(
+                f'<div class="history-msg {css_class}">'
+                f'<div class="role">{label}</div>'
+                f'{safe_content}</div>',
+                unsafe_allow_html=True,
+            )
